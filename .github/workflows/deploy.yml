@@ -19,29 +19,37 @@ jobs:
       id-token: 'write'
 
     steps:
-    - uses: 'actions/checkout@v3'
-    - id: 'auth'
-      name: 'Authenticate to Google Cloud'
-      uses: 'google-github-actions/auth@v1'
+    - uses: actions/checkout@v3
+
+    - id: auth
+      name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v1
       with:
-        token_format: 'access_token'
-        workload_identity_provider: 'projects/66089206817/locations/global/workloadIdentityPools/k8s-pool/providers/k8s-provider'
-        service_account: 'tf-gke-test@$GCP_PROJECT_ID.iam.gserviceaccount.com'
-    - name: 'Set up Cloud SDK'
-      uses: 'google-github-actions/setup-gcloud@v1'
+        token_format: access_token
+        workload_identity_provider: projects/66089206817/locations/global/workloadIdentityPools/k8s-pool/providers/k8s-provider
+        service_account: tf-gke-test@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+
     - name: docker auth
-      run: gcloud auth configure-docker
+      run: gcloud auth configure-docker --quiet
+
     - run: gcloud auth list
+
     - name: Build and push docker image
       run: |
         docker build -t us.gcr.io/$GCP_PROJECT_ID/nodeappimage:$IMAGE_TAG .
         docker push us.gcr.io/$GCP_PROJECT_ID/nodeappimage:$IMAGE_TAG
       working-directory: ./nodeapp
+
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
+
     - name: Terraform init
       run: terraform init -backend-config="bucket=$TF_STATE_BUCKET_NAME" -backend-config="prefix=test"
       working-directory: ./terraform
+
     - name: Terraform Plan
       run: |
         terraform plan \
@@ -50,6 +58,7 @@ jobs:
         -var="container_image=us.gcr.io/$GCP_PROJECT_ID/nodeappimage:$IMAGE_TAG" \
         -out=PLAN
       working-directory: ./terraform
+
     - name: Terraform Apply
-      run: terraform apply PLAN
+      run: terraform apply -auto-approve PLAN
       working-directory: ./terraform
