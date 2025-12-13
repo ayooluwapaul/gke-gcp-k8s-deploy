@@ -33,7 +33,7 @@ jobs:
       uses: google-github-actions/setup-gcloud@v1
 
     - name: docker auth
-      run: gcloud auth configure-docker --quiet
+      run: gcloud auth configure-docker us.gcr.io --quiet
 
     - run: gcloud auth list
 
