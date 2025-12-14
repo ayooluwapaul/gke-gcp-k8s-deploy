@@ -1,12 +1,14 @@
 name: Deploy to kubernetes
+
 on:
   push:
     branches:
       - "Full-CI/CD-with-Terraform-GKE"
+
   workflow_dispatch:
     inputs:
       action:
-        description: "What do you want to do?"
+        description: "Choose what to run"
         required: true
         type: choice
         options:
@@ -18,16 +20,30 @@ env:
   TF_STATE_BUCKET_NAME: ${{ secrets.GCP_TF_STATE_BUCKET }}
 
 jobs:
-  deploy:
-    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy') }}
+  debug:
     runs-on: ubuntu-latest
+    steps:
+      - name: Show trigger info
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "action_input=${{ github.event.inputs.action }}"
+          echo "ref=${{ github.ref }}"
+
+  deploy:
+    needs: debug
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy') }}
+    runs-on: ubuntu-latest
+
     env:
       IMAGE_TAG: ${{ github.sha }}
+
     permissions:
       contents: 'read'
       id-token: 'write'
+
     steps:
       - uses: actions/checkout@v3
+
       - id: auth
         name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v1
@@ -35,41 +51,54 @@ jobs:
           token_format: access_token
           workload_identity_provider: projects/66089206817/locations/global/workloadIdentityPools/k8s-pool/providers/k8s-provider
           service_account: tf-gke-test@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
+
       - name: docker auth
         run: gcloud auth configure-docker us.gcr.io --quiet
+
       - name: Build and push docker image
         run: |
           docker build -t us.gcr.io/$GCP_PROJECT_ID/nodeappimage:$IMAGE_TAG .
           docker push us.gcr.io/$GCP_PROJECT_ID/nodeappimage:$IMAGE_TAG
         working-directory: ./nodeapp
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
+
       - name: Terraform init
         run: terraform init -backend-config="bucket=$TF_STATE_BUCKET_NAME" -backend-config="prefix=test"
         working-directory: ./terraform
+
       - name: Terraform Plan
         run: |
           terraform plan \
-          -var="region=us-central1" \
-          -var="project_id=$GCP_PROJECT_ID" \
-          -var="container_image=us.gcr.io/$GCP_PROJECT_ID/nodeappimage:$IMAGE_TAG" \
-          -out=PLAN
+            -var="region=us-central1" \
+            -var="project_id=$GCP_PROJECT_ID" \
+            -var="container_image=us.gcr.io/$GCP_PROJECT_ID/nodeappimage:$IMAGE_TAG" \
+            -out=PLAN
         working-directory: ./terraform
+
       - name: Terraform Apply
         run: terraform apply -auto-approve PLAN
         working-directory: ./terraform
 
   cleanup:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'cleanup' }}
+    needs: debug
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'cleanup' }}
     runs-on: ubuntu-latest
-    environment: cleanup   # optional: require approvals via GitHub Environments
+
+    # Configure repo Settings → Environments → "cleanup" → Required reviewers
+    environment: cleanup
+
     permissions:
       contents: 'read'
       id-token: 'write'
+
     steps:
       - uses: actions/checkout@v3
+
       - id: auth
         name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v1
@@ -77,13 +106,17 @@ jobs:
           token_format: access_token
           workload_identity_provider: projects/66089206817/locations/global/workloadIdentityPools/k8s-pool/providers/k8s-provider
           service_account: tf-gke-test@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
+
       - name: Terraform init
         run: terraform init -backend-config="bucket=$TF_STATE_BUCKET_NAME" -backend-config="prefix=test"
         working-directory: ./terraform
+
       - name: Terraform Destroy
         run: |
           terraform destroy -auto-approve \
