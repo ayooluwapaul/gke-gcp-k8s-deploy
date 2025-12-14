@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - "Full-CI/CD-with-Terraform-GKE"
+  workflow_dispatch: {}   # enables manual runs (for cleanup)
 
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -35,8 +36,6 @@ jobs:
     - name: docker auth
       run: gcloud auth configure-docker us.gcr.io --quiet
 
-    - run: gcloud auth list
-
     - name: Build and push docker image
       run: |
         docker build -t us.gcr.io/$GCP_PROJECT_ID/nodeappimage:$IMAGE_TAG .
@@ -61,4 +60,45 @@ jobs:
 
     - name: Terraform Apply
       run: terraform apply -auto-approve PLAN
+      working-directory: ./terraform
+
+  cleanup:
+    # Only run when manually triggered
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+
+    # Add an environment so you can require manual approval in GitHub settings
+    environment: cleanup
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - id: auth
+      name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v1
+      with:
+        token_format: access_token
+        workload_identity_provider: projects/66089206817/locations/global/workloadIdentityPools/k8s-pool/providers/k8s-provider
+        service_account: tf-gke-test@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+
+    - name: Terraform init
+      run: terraform init -backend-config="bucket=$TF_STATE_BUCKET_NAME" -backend-config="prefix=test"
+      working-directory: ./terraform
+
+    - name: Terraform Destroy (manual)
+      run: |
+        terraform destroy -auto-approve \
+          -var="region=us-central1" \
+          -var="project_id=$GCP_PROJECT_ID" \
+          -var="container_image=us.gcr.io/$GCP_PROJECT_ID/nodeappimage:dummy"
       working-directory: ./terraform
