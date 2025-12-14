@@ -11,6 +11,8 @@ resource "google_container_cluster" "default" {
   initial_node_count = 3
   min_master_version = data.google_container_engine_versions.default.latest_master_version
 
+  deletion_protection = false
+
   node_config {
     machine_type = "g1-small"
     disk_size_gb = 32
