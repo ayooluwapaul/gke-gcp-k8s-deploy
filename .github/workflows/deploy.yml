@@ -38,8 +38,8 @@ jobs:
       IMAGE_TAG: ${{ github.sha }}
 
     permissions:
-      contents: 'read'
-      id-token: 'write'
+      contents: "read"
+      id-token: "write"
 
     steps:
       - uses: actions/checkout@v3
@@ -89,12 +89,12 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'cleanup' }}
     runs-on: ubuntu-latest
 
-    # Configure repo Settings → Environments → "cleanup" → Required reviewers
+    # Configure Settings → Environments → cleanup → Required reviewers
     environment: cleanup
 
     permissions:
-      contents: 'read'
-      id-token: 'write'
+      contents: "read"
+      id-token: "write"
 
     steps:
       - uses: actions/checkout@v3
@@ -117,8 +117,14 @@ jobs:
         run: terraform init -backend-config="bucket=$TF_STATE_BUCKET_NAME" -backend-config="prefix=test"
         working-directory: ./terraform
 
-      - name: Terraform Destroy
+      # Important: apply first (to flip deletion_protection=false in Terraform), then destroy.
+      - name: Disable deletion protection (apply) then destroy
         run: |
+          terraform apply -auto-approve \
+            -var="region=us-central1" \
+            -var="project_id=$GCP_PROJECT_ID" \
+            -var="container_image=us.gcr.io/$GCP_PROJECT_ID/nodeappimage:dummy"
+
           terraform destroy -auto-approve \
             -var="region=us-central1" \
             -var="project_id=$GCP_PROJECT_ID" \
